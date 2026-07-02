@@ -59,5 +59,7 @@ jobs:
           PY
 
       - name: 运行注册脚本（真实流程）
+        env:
+          DEBUG_NETWORK_LOG: "1"
         run: |
           xvfb-run -a python main.py

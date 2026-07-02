@@ -81,7 +81,9 @@ class PatchrightController(BaseBrowserController):
     def get_thread_page(self):
         browser = self.get_thread_browser()
         context = browser.new_context()
-        return context.new_page()
+        page = context.new_page()
+        self._attach_network_debug_listeners(page)
+        return page
 
     def clean_up(self, page=None, type="all_browser"):
         if type == "done_browser" and page:

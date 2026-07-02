@@ -3,6 +3,7 @@ import time
 import json
 import random
 import threading
+import traceback
 from faker import Faker
 from abc import ABC, abstractmethod
 
@@ -19,6 +20,10 @@ class BaseBrowserController(ABC):
         self.enable_oauth2 = data["oauth2"]['enable_oauth2']
         self.proxy = data['proxy']
         self.email_suffix = data['email_suffix']
+        self.debug_network = (
+            os.getenv("DEBUG_NETWORK_LOG", "0").lower() in ("1", "true", "yes")
+            or str(data.get("debug_network", "false")).lower() in ("1", "true", "yes")
+        )
 
         self.thread_local = threading.local()
         self.cleanup_lock = threading.Lock()
@@ -26,6 +31,33 @@ class BaseBrowserController(ABC):
 
         self.results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Results')
         os.makedirs(self.results_dir, exist_ok=True)
+
+    def _is_watched_request(self, url: str) -> bool:
+        watch_hosts = (
+            "outlook.live.com",
+            "account.live.com",
+            "login.live.com",
+            "microsoft.com",
+            "outlook.com",
+            "hsprotect.net",
+            "browser.events.data.microsoft.com",
+            "graph.microsoft.com",
+        )
+        return any(host in url for host in watch_hosts)
+
+    def _attach_network_debug_listeners(self, page):
+        if not self.debug_network:
+            return
+
+        page.on("request", lambda req: print(f"[Network][Request] {req.method} {req.url}") if self._is_watched_request(req.url) else None)
+        page.on("response", lambda resp: print(f"[Network][Response] {resp.status} {resp.url}") if self._is_watched_request(resp.url) else None)
+        page.on(
+            "requestfailed",
+            lambda req: print(
+                f"[Network][RequestFailed] {req.method} {req.url} | "
+                f"failure={req.failure()}"
+            ) if self._is_watched_request(req.url) else None,
+        )
 
 
     @abstractmethod
@@ -90,13 +122,30 @@ class BaseBrowserController(ABC):
         day = str(random.randint(1, 28))
 
         try:
-            page.goto("https://outlook.live.com/mail/0/?prompt=create_account", timeout=20000, wait_until="domcontentloaded")
+            response = page.goto(
+                "https://outlook.live.com/mail/0/?prompt=create_account",
+                timeout=20000,
+                wait_until="domcontentloaded",
+            )
+            if response is None:
+                print("[Diag] page.goto returned None response object.")
+            else:
+                print(f"[Diag] goto -> url={response.url} status={response.status} ok={response.ok}")
+            print(f"[Diag] current_url_after_goto={page.url}")
             page.get_by_text('同意并继续').wait_for(timeout=30000)
             start_time = time.time()
             page.wait_for_timeout(0.1 * self.wait_time)
             page.get_by_text('同意并继续').click(timeout=30000)
-        except:
+        except Exception as e:
             print("[Error: IP] - IP质量不佳，无法进入注册界面。")
+            print(f"[Diag] step error: {type(e).__name__}: {e}")
+            if self.debug_network:
+                traceback.print_exc()
+            try:
+                print(f"[Diag] current_url={page.url}")
+                print(f"[Diag] title={page.title()}")
+            except Exception:
+                pass
             return False
 
         try:
@@ -152,8 +201,11 @@ class BaseBrowserController(ABC):
             if not captcha_result:
                 raise TimeoutError
 
-        except Exception:
+        except Exception as e:
             print("[Error: IP] - 加载超时或因触发机器人检测导致按压次数达到最大仍未通过。")
+            print(f"[Diag] detail: {type(e).__name__}: {e}")
+            if self.debug_network:
+                traceback.print_exc()
             return False
 
         filename = os.path.join(self.results_dir, 'logged_email.txt' if self.enable_oauth2 else 'unlogged_email.txt')
