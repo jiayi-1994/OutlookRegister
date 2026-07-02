@@ -2,6 +2,9 @@ name: concurrency-test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "codex/gha-concurrency-test"
 
 jobs:
   ci:
