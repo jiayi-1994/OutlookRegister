@@ -2,13 +2,10 @@ name: concurrency-test
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - "codex/gha-concurrency-test"
 
 jobs:
   ci:
-    name: "并发测试任务 ${{ matrix.job }}"
+    name: "注册脚本并发任务 ${{ matrix.job }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -25,16 +22,42 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 并发执行 smoke 检查
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install chromium
+
+      - name: 准备 CI 注册配置
         env:
           JOB_INDEX: ${{ matrix.job }}
         run: |
-          python -m py_compile main.py utils.py get_token.py
           python - <<'PY'
-          import os, time, random
-          idx = os.environ.get("JOB_INDEX", "unknown")
-          print(f"[Job {idx}] 开始执行并发任务")
-          # 模拟一个可见的短任务，实际可替换为你的正式步骤（如 python main.py）
-          time.sleep(2)
-          print(f"[Job {idx}] 完成执行，随机值={random.randint(1, 999)}")
+          import json
+          import os
+
+          with open("config.json", "r", encoding="utf-8") as f:
+              cfg = json.load(f)
+
+          cfg.update({
+              "choose_browser": "playwright",
+              "proxy": "",
+              "bot_protection_wait": 0,
+              "max_captcha_retries": 1,
+              "concurrent_flows": 1,
+              "max_tasks": 1,
+              "oauth2": {
+                  **cfg.get("oauth2", {}),
+                  "enable_oauth2": False,
+              },
+          })
+
+          with open("config.json", "w", encoding="utf-8") as f:
+              json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+          print(f"[Job {os.environ.get('JOB_INDEX', '0')}] 已写入 CI 配置")
           PY
+
+      - name: 运行注册脚本（真实流程）
+        run: |
+          xvfb-run -a python main.py
