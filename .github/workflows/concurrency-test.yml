@@ -1,0 +1,37 @@
+name: concurrency-test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: "并发测试任务 ${{ matrix.job }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        job: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 并发执行 smoke 检查
+        env:
+          JOB_INDEX: ${{ matrix.job }}
+        run: |
+          python -m py_compile main.py utils.py get_token.py
+          python - <<'PY'
+          import os, time, random
+          idx = os.environ.get("JOB_INDEX", "unknown")
+          print(f"[Job {idx}] 开始执行并发任务")
+          # 模拟一个可见的短任务，实际可替换为你的正式步骤（如 python main.py）
+          time.sleep(2)
+          print(f"[Job {idx}] 完成执行，随机值={random.randint(1, 999)}")
+          PY
