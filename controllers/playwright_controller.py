@@ -19,12 +19,17 @@ class PlaywrightController(BaseBrowserController):
                 "server": self.proxy,
                 "bypass": "localhost",
             } if self.proxy else None
-            b = p.chromium.launch(
-                executable_path=self.browser_path,
+
+            launch_kwargs = {
                 headless=False,            
                 args=['--lang=zh-CN'],
                 proxy=proxy_settings
-            )
+            }
+
+            if self.browser_path:
+                launch_kwargs["executable_path"] = self.browser_path
+
+            b = p.chromium.launch(**launch_kwargs)
 
             return p, b
 
