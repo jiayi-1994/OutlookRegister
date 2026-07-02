@@ -21,9 +21,9 @@ class PlaywrightController(BaseBrowserController):
             } if self.proxy else None
 
             launch_kwargs = {
-                headless=False,            
-                args=['--lang=zh-CN'],
-                proxy=proxy_settings
+                "headless": False,
+                "args": ['--lang=zh-CN'],
+                "proxy": proxy_settings
             }
 
             if self.browser_path:
