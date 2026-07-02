@@ -103,10 +103,52 @@ class BaseBrowserController(ABC):
             self.thread_local.playwright = p
             self.thread_local.browser = b
 
-            with self.cleanup_lock:
-                self.active_resources.append((p, b))
+        with self.cleanup_lock:
+            self.active_resources.append((p, b))
 
         return self.thread_local.browser
+
+    def _wait_and_click_start_flow(self, page):
+        candidates = [
+            lambda: page.get_by_role("button", name="同意并继续", exact=True),
+            lambda: page.get_by_text("同意并继续"),
+            lambda: page.get_by_role("button", name="Accept and continue", exact=True),
+            lambda: page.get_by_role("button", name="Next", exact=True),
+            lambda: page.locator('[data-testid="primaryButton"]').first,
+        ]
+
+        for i, get_loc in enumerate(candidates, 1):
+            try:
+                locator = get_loc()
+                cnt = locator.count()
+                if cnt <= 0:
+                    continue
+
+                print(f"[Diag] click candidate #{i} found {cnt} node(s), start click.")
+                locator.wait_for(state="visible", timeout=30000)
+                locator.click(timeout=30000)
+                print("[Diag] clicked start-flow control.")
+                return True
+            except Exception:
+                if self.debug_network:
+                    print(f"[Diag] candidate #{i} click failed.")
+                continue
+
+        # 兜底：打印当前候选按钮文本，便于下一步调试
+        if self.debug_network:
+            try:
+                buttons = page.get_by_role("button").all()
+                labels = []
+                for b in buttons[:30]:
+                    try:
+                        labels.append((b.get_attribute("type"), b.inner_text()[:80]))
+                    except Exception:
+                        labels.append((None, "<unreadable>"))
+                print(f"[Diag] all buttons sample: {labels}")
+            except Exception as e:
+                print(f"[Diag] dump buttons failed: {e}")
+
+        return False
 
     def outlook_register(self, page, email, password):
         """
@@ -132,10 +174,10 @@ class BaseBrowserController(ABC):
             else:
                 print(f"[Diag] goto -> url={response.url} status={response.status} ok={response.ok}")
             print(f"[Diag] current_url_after_goto={page.url}")
-            page.get_by_text('同意并继续').wait_for(timeout=30000)
+            if not self._wait_and_click_start_flow(page):
+                raise TimeoutError("未找到/未能点击 '同意并继续' 或同等入口控件")
             start_time = time.time()
             page.wait_for_timeout(0.1 * self.wait_time)
-            page.get_by_text('同意并继续').click(timeout=30000)
         except Exception as e:
             print("[Error: IP] - IP质量不佳，无法进入注册界面。")
             print(f"[Diag] step error: {type(e).__name__}: {e}")
